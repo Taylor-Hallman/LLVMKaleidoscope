@@ -1,0 +1,11 @@
+*.exe
+*.bin
+*.ilk
+*.pdb
+*.ll
+gen
+run
+build
+my-build/
+their-build/
+

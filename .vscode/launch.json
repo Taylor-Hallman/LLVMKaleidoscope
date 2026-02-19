@@ -1,0 +1,24 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "codelldb Launch",
+            "type": "codelldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/my-build/MyLang",
+            "args": [],
+            "stopOnEntry": false,
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "their code",
+            "type": "codelldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/their-build/MyLang",
+            "args": [],
+            "stopOnEntry": false,
+            "cwd": "${workspaceFolder}"
+
+        }
+    ]
+}

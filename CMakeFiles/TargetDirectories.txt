@@ -1,0 +1,8 @@
+C:/Users/Taylor/llvm-first-lang/CMakeFiles/intrinsics_gen.dir
+C:/Users/Taylor/llvm-first-lang/CMakeFiles/vt_gen.dir
+C:/Users/Taylor/llvm-first-lang/CMakeFiles/omp_gen.dir
+C:/Users/Taylor/llvm-first-lang/CMakeFiles/acc_gen.dir
+C:/Users/Taylor/llvm-first-lang/CMakeFiles/target_parser_gen.dir
+C:/Users/Taylor/llvm-first-lang/CMakeFiles/MyLang.dir
+C:/Users/Taylor/llvm-first-lang/CMakeFiles/edit_cache.dir
+C:/Users/Taylor/llvm-first-lang/CMakeFiles/rebuild_cache.dir
