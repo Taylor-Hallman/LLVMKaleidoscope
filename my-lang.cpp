@@ -158,11 +158,6 @@ static int gettok() {
     OperatorStr = LastChar;
     std::string input{static_cast<char>(LastChar)};
     while ((LastChar = getchar()) != EOF) {
-        // TODO fix--currently this means we can't, for example, have
-        // both a '&' operator and an '&&' operator b/c '&&' will always
-        // be interpreted as two consecutive '&'s
-        if (Operators.contains(OperatorStr))
-            return Operators.at(OperatorStr);
         input += LastChar;
         if (isspace(LastChar) || isalnum(LastChar) || LastChar == '(')
             break;
@@ -171,10 +166,12 @@ static int gettok() {
 
     int i = input.size() - 1;
     do {
+        if (Operators.contains(OperatorStr)) 
+            return Operators.at(OperatorStr);
         ungetc(input[i--], stdin);
+        OperatorStr.pop_back();
+        LastChar = input[i];
     } while (i > 0);
-
-    LastChar = OperatorStr[0];
 
     if (LastChar == '#') {
         do {
