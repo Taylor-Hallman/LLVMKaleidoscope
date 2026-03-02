@@ -74,43 +74,49 @@ enum Token {
     tok_in = -10,
     tok_unary = -11,
     tok_binary = -12,
-    tok_assign = -13,
-    tok_less = -14,
-    tok_lesseq = -15,
-    tok_greater = -16,
-    tok_greatereq = -17,
-    tok_equal = -18,
-    tok_nequal = -19,
-    tok_plus = -20,
-    tok_minus = -21,
-    tok_mult = -22,
-    tok_div = -23,
-    tok_mod = -24
+    tok_less = -13,
+    tok_lesseq = -14,
+    tok_greater = -15,
+    tok_greatereq = -16,
+    tok_equal = -17,
+    tok_nequal = -18,
+    tok_plus = -19,
+    tok_minus = -20,
+    tok_mult = -21,
+    tok_div = -22,
+    tok_mod = -23
 };
 
+enum OpType {
+    unary,
+    binary,
+    none
+};
 
 static std::string IdentifierStr;
 static std::string OperatorStr;
 static double NumVal;
 
-struct HashFunction {
-    size_t operator()(const std::pair<int, int>& p) {
-        return p.first ^ p.second;
-    }
-};
-
 static Bimap<std::string, int> Operators; 
 static std::unordered_map<int, unsigned> OpPrecedence;
 
+static OpType getType(int TokId) {
+    return OpPrecedence.contains(TokId) ? binary : unary;
+}
+
 static void addOperator(std::string name, int prec) {
     static int id = static_cast<int>(tok_less);
-    Operators.insert(name, id);
-    if (prec >= 0)
+    if (prec >= 0) {
+        Operators.insert(name + 'B', id);
         OpPrecedence.emplace(id, prec);
+    }
+    else {
+        Operators.insert(name + 'U', id);
+    }
     id--;
 }
 
-static int gettok() {
+static int gettok(OpType expected = none) {
     static int LastChar = ' ';
     char* LastCharC = reinterpret_cast<char*>(&LastChar);
 
@@ -150,7 +156,7 @@ static int gettok() {
             NumStr += LastChar;
             LastChar = getchar();
         } while (isdigit(LastChar) || LastChar == '.');
-
+ 
         NumVal = strtod(NumStr.c_str(), nullptr);
         return tok_number;
     }
@@ -166,8 +172,11 @@ static int gettok() {
 
     int i = input.size() - 1;
     do {
-        if (Operators.contains(OperatorStr)) 
-            return Operators.at(OperatorStr);
+        bool hasBin = Operators.contains(OperatorStr + 'B'), hasUn = Operators.contains(OperatorStr + 'U');
+        if (hasBin && expected != unary)
+            return Operators.at(OperatorStr + 'B');
+        if (hasUn && expected != binary)
+            return Operators.at(OperatorStr + 'U');
         ungetc(input[i--], stdin);
         OperatorStr.pop_back();
         LastChar = input[i];
@@ -323,8 +332,8 @@ public:
 };
 
 static int CurTok;
-static int getNextToken() {
-    return CurTok = gettok();
+static int getNextToken(OpType expected = none) {
+    return CurTok = gettok(expected);
 }
 
 //===----------------------------------------------------------------------===//
@@ -395,7 +404,9 @@ llvm::Value* BinaryExprAST::codegen() {
     if (!L || !R)
         return nullptr;
 
-    int BinOp = Operators.at(this->Op);
+    if (!Operators.contains(this->Op + 'B'))
+        return LogErrorV("Binary operator not found");
+    int BinOp = Operators.at(this->Op + 'B');
 
     switch (BinOp) {
     case tok_less:
@@ -703,7 +714,7 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
     std::string IdName = IdentifierStr;
     getNextToken(); // eat identifier
 
-    if (CurTok != tok_assign)
+    if (CurTok != '=')
         return LogError("expected '=' after for");
     getNextToken(); // eat '='
 
@@ -763,10 +774,20 @@ static std::unique_ptr<ExprAST> ParseUnary() {
     if (!Operators.contains(CurTok) && (!isascii(CurTok) || CurTok == '(' || CurTok == ','))
         return ParsePrimary();
 
-    int Opc = CurTok;
+    if (OpPrecedence.contains(CurTok)) { // CurTok is a binary operator, need to check for a unary version
+        std::string OpName = Operators.at(CurTok);
+        OpName.back() = 'U';
+        if (Operators.contains(OpName))
+            CurTok = Operators.at(OpName);
+    }
+
+    int OpId = CurTok;
     getNextToken();
-    if (auto Operand = ParseUnary())
-        return std::make_unique<UnaryExprAST>(Operators.at(Opc), std::move(Operand));
+    if (auto Operand = ParseUnary()) {
+        std::string name = Operators.at(OpId);
+        name.pop_back(); // remove 'U' identifier
+        return std::make_unique<UnaryExprAST>(name, std::move(Operand));
+    }
     return nullptr;
 }
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LHS);
@@ -799,8 +820,9 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<Expr
                     return nullptr;
             }
 
-            std::string OpName = Operators.at(BinOp);
-            LHS = std::make_unique<BinaryExprAST>(Operators.at(BinOp), std::move(LHS), std::move(RHS));
+            std::string OpStr = Operators.at(BinOp);
+            OpStr.pop_back(); // remove trailing 'B' identifier
+            LHS = std::make_unique<BinaryExprAST>(OpStr, std::move(LHS), std::move(RHS));
         }
     }
 }
@@ -817,7 +839,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
             getNextToken();
             break;
         case tok_unary:
-            getNextToken();
+            getNextToken(unary);
             while (isascii(CurTok) && CurTok != '(') {
                 OpName += static_cast<char>(CurTok);
                 getNextToken();
@@ -825,13 +847,11 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
             if (OpName.empty())
                 return LogErrorP("Expected unary operator");
             FnName = "unary" + OpName;
-            if (Operators.contains(OpName))
-                return LogErrorP("Unary operator already defined");
             addOperator(OpName, -1);
             Kind = 1;
             break;
         case tok_binary:
-            getNextToken();
+            getNextToken(binary);
             while (isascii(CurTok) && CurTok != '(') {
                 OpName += static_cast<char>(CurTok);
                 getNextToken();
@@ -839,8 +859,6 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
             if (OpName.empty())
                 return LogErrorP("Expected binary operator");
             FnName = "binary" + OpName;
-            if (Operators.contains(OpName))
-                return LogErrorP("Binary operator already defined");
             Kind = 2;
             if (CurTok == tok_number) {
                 if (NumVal < 1 || NumVal > 100)
@@ -1049,13 +1067,6 @@ int main() {
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
 
-    fprintf(stderr, "ready> ");
-    getNextToken();
-
-    TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
-
-    InitializeModuleAndPassManager();
-
     addOperator("<", 10);
     addOperator("<=", 10);
     addOperator(">", 10);
@@ -1067,6 +1078,13 @@ int main() {
     addOperator("*", 40);
     addOperator("/", 40);
     addOperator("%", 40);
+
+    fprintf(stderr, "ready> ");
+    getNextToken();
+
+    TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
+
+    InitializeModuleAndPassManager();
 
     MainLoop();
 

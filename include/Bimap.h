@@ -61,15 +61,15 @@ public:
     const T& at(const U& key) const {
         return m2.at(key);
     }
-    bool contains(const T& key) {
+    bool contains(const T& key) const {
         return m1.contains(key);
     }
 
-    bool contains(const U& key) {
+    bool contains(const U& key) const {
         return m2.contains(key);
     }
 
-    bool empty() {
+    bool empty() const {
         return m1.empty();
     }
 };
