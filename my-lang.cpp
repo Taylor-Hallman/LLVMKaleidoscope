@@ -1,6 +1,7 @@
 #include "./include/KaleidoscopeJIT.h"
 #include "./include/Bimap.h"
 
+#include "llvm-c/Target.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
@@ -12,16 +13,23 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassInstrumentation.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
+#include "llvm/Support/CodeGen.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
+#include "llvm/TargetParser/Host.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/GVN.h"
@@ -167,6 +175,9 @@ static int gettok(OpType expected = none) {
         return tok_number;
     }
 
+    if (LastChar == EOF)
+        return tok_eof;
+
     OperatorStr = LastChar;
     std::string input{static_cast<char>(LastChar)};
     while ((LastChar = getchar()) != EOF) {
@@ -197,9 +208,6 @@ static int gettok(OpType expected = none) {
             return gettok();
         }
     }
-
-    if (LastChar == EOF)
-        return tok_eof;
 
     int ThisChar = LastChar;
     LastChar = getchar();
@@ -1089,8 +1097,6 @@ static void HandleDefinition() {
             fprintf(stderr, "Read function definition:\n");
             FnIR->print(llvm::errs());
             fprintf(stderr, "\n");
-            ExitOnErr(TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
-            InitializeModuleAndPassManager();
         }
     }
     else {
@@ -1181,11 +1187,14 @@ static void MainLoop() {
     }
 }
 
-
 int main() {
-    llvm::InitializeNativeTarget();
-    llvm::InitializeNativeTargetAsmPrinter();
-    llvm::InitializeNativeTargetAsmParser();
+    using namespace llvm;
+
+    Triple TargetTriple(sys::getDefaultTargetTriple());
+
+    InitializeNativeTarget();
+    InitializeNativeTargetAsmPrinter();
+    InitializeNativeTargetAsmParser();
 
     addOperator("=", 2);
     addOperator("<", 10);
@@ -1203,11 +1212,52 @@ int main() {
     fprintf(stderr, "ready> ");
     getNextToken();
 
-    TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
+    TheJIT = ExitOnErr(orc::KaleidoscopeJIT::Create());
 
     InitializeModuleAndPassManager();
 
     MainLoop();
 
-    TheModule->print(llvm::errs(), nullptr);
+    InitializeNativeTarget();
+    InitializeNativeTargetAsmPrinter();
+    InitializeNativeTargetAsmParser();
+
+    std::string Error;
+    auto Target = TargetRegistry::lookupTarget(TargetTriple, Error);
+
+    if (!Target) {
+        errs() << Error;
+        return 1;
+    }
+
+    auto CPU = "generic";
+    auto Features = "";
+
+    TargetOptions opt;
+    auto TargetMachine = Target->createTargetMachine(TargetTriple, CPU, Features, opt, Reloc::PIC_);
+
+    TheModule->setDataLayout(TargetMachine->createDataLayout());
+    TheModule->setTargetTriple(TargetTriple);
+
+    auto Filename = "output.o";
+    std::error_code EC;
+    raw_fd_ostream dest(Filename, EC, sys::fs::OF_None);
+
+    if (EC) {
+        errs() << "Could not open file: " << EC.message();
+        return 1;
+    }
+
+    legacy::PassManager pass;
+    auto FileType = CodeGenFileType::ObjectFile;
+
+    if (TargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
+        errs() << "TargetMachine can't emit a file of this type";
+        return 1;
+    }
+
+    pass.run(*TheModule);
+    dest.flush();
+
+    outs() << "Wrote " << Filename << "\n";
 }

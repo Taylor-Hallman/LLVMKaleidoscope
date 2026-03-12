@@ -3,9 +3,12 @@
 *.ilk
 *.pdb
 *.ll
+*.o
 gen
 run
+test
 build
 my-build/
 their-build/
-
+their-code.cpp
+test.cpp
